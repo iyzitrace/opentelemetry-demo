@@ -54,3 +54,4 @@ src/shippingservice/target/
 /src/recommendationservice/demo_pb2*.py
 /src/shippingservice/proto/
 dbfiles/
+/src/signoz/data/
