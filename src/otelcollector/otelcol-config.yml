@@ -39,6 +39,8 @@ exporters:
 
 processors:
   batch:
+  spanmetrics:
+    metrics_exporter: clickhouse
   filter:
     metrics:
       exclude:
