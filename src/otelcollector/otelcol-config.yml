@@ -7,23 +7,19 @@ receivers:
     protocols:
       grpc:
       http:
-        cors:
-          allowed_origins:
-            - "http://*"
-            - "https://*"
 
 exporters:
+  logging:
   otlp:
-    endpoint: "http://otel-collector:4317"
+    endpoint: "jaeger:4317"
     tls:
       insecure: true
-  logging:
   prometheus:
     endpoint: "otelcol:9464"
     resource_to_telemetry_conversion:
       enabled: true
     enable_open_metrics: true
-  clickhouse:
+  clickhouse: 
     endpoint: tcp://clickhouse:9000?dial_timeout=10s&compress=lz4
     database: otel
     ttl_days: 3
@@ -37,36 +33,49 @@ exporters:
       max_interval: 30s
       max_elapsed_time: 300s
 
-processors:
-  batch:
-  spanmetrics:
-    metrics_exporter: clickhouse
-  filter:
-    metrics:
-      exclude:
-        match_type: strict
-        metric_names:
-          - queueSize
-  servicegraph:
-    metrics_exporter: clickhouse # Exporter to send metrics to
-    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 100ms, 250ms] # Buckets for latency histogram
-    dimensions: [cluster, namespace, operation,service_name] # Additional dimensions (labels) to be added to the metrics extracted from the resource and span attributes
-    store: # Configuration for the in-memory store
-      ttl: 2s # Value to wait for an edge to be completed
-      max_items: 200 # Amount of edges that will be stored in the storeMap
-
 connectors:
   spanmetrics:
+    namespace: traces.spanmetrics
+    aggregation_temporality: "AGGREGATION_TEMPORALITY_DELTA"
+    metrics_flush_interval: 5s
+    exemplars:
+      enabled: true
+    histogram:
+      unit: ms
+
+
+processors:
+  batch:
+    timeout: 5s
+    send_batch_size: 100000
+  servicegraph:
+    metrics_exporter: clickhouse
+    dimensions: [cluster, namespace] # Additional dimensions (labels) to be added to the metrics extracted from the resource and span attributes   
+    cache_loop: 2m # the time to cleans the cache periodically
+    store_expiration_loop: 10s # the time to expire old entries from the store periodically.
+    virtual_node_peer_attributes:
+      - db.name
+      - rpc.service
+  metricstransform:
+    transforms:
+      - include: "traces.spanmetrics.duration"
+        action: "update"
+        new_name: "traces.spanmetrics.latency"
+      - include: "traces.spanmetrics.calls"
+        action: "update"
+        new_name: "traces.spanmetrics.calls.total"
+  probabilistic_sampler:
+    sampling_percentage: 50
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
+      processors: [batch,servicegraph]
       exporters: [otlp, logging, spanmetrics, clickhouse]
     metrics:
       receivers: [otlp, spanmetrics]
-      processors: [filter, batch]
+      processors: [metricstransform, batch]
       exporters: [prometheus, logging, clickhouse]
     logs:
       receivers: [otlp]
