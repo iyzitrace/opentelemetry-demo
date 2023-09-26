@@ -11,7 +11,7 @@ receivers:
 exporters:
   logging:
   otlp:
-    endpoint: "jaeger:4317"
+    endpoint: "http://otel-collector:4317"
     tls:
       insecure: true
   prometheus:
